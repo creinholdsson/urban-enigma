@@ -5,8 +5,8 @@ authors = ["pi"]
 edition = "2018"
 
 [dependencies]
-rppal = "0.10.0"
-rocket = "0.4.2"
-rocket_contrib = "0.4.2"
+rppal = "0.11.3"
+rocket = "0.4.5"
+rocket_contrib = "0.4.5"
 log = "0.4.8"
 log4rs = "0.9.0"

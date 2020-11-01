@@ -13,167 +13,125 @@ use rocket_contrib::serve::StaticFiles;
 use std::error::Error;
 
 use rppal::gpio::Gpio;
-use rppal::gpio::OutputPin;
 
 use std::time::Duration;
 
 use log::LevelFilter;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
+use std::sync::{Arc, Mutex};
 
-const GPIO_LED: u8 = 17;
-const ONE_LENGTH: u64 = 300;
-const FIRST_PAUSE_LENGTH: u64 = 2500;
-const LOW_PAUSE_LENGTH: u64 = 170;
-const PULSE_PAUSE_LENGTH: u64 = 1200;
-const SENDER_THREE: nexa::Nexa = nexa::Nexa {
-    sender_id: "11000000000000000000000000",
-};
-const SENDER_TWO: nexa::Nexa = nexa::Nexa {
-    sender_id: "11000000000000000000000001",
-};
-const SENDER_ONE: nexa::Nexa = nexa::Nexa {
-    sender_id: "11000000000000000000000010",
-};
+use rocket::State;
 
-const TWO_ON: [i32; 33] = [
-    2, 1, 2, 2, 3, 2, 2, 2, 1, 3, 1, 2, 3, 1, 2, 2, 2, 2, 3, 1, 3, 2, 1, 3, 1, 3, 2, 1, 2, 2, 2, 3,
-    1,
-];
-const TWO_OFF: [i32; 33] = [
-    2, 1, 2, 2, 3, 2, 2, 2, 1, 3, 1, 2, 3, 1, 2, 2, 2, 2, 3, 1, 3, 2, 1, 3, 1, 3, 2, 2, 1, 2, 2, 3,
-    1,
-];
+#[derive(Clone)]
+struct SenderState<'a> {
+    sender_one: nexa::Nexa<'a>,
+    sender_two: nexa::Nexa<'a>,
+    sender_three: nexa::Nexa<'a>,
+    sender_four: nexa::Nexa<'a>,
+}
 
-const FIVE_ON: [i32; 33] = [
-    2, 1, 2, 2, 3, 2, 2, 2, 1, 3, 1, 3, 2, 1, 2, 2, 2, 2, 3, 1, 3, 2, 1, 3, 1, 3, 2, 1, 2, 2, 2, 3,
-    1,
-];
-const FIVE_OFF: [i32; 33] = [
-    2, 1, 2, 2, 3, 2, 2, 2, 1, 3, 1, 3, 2, 1, 2, 2, 2, 2, 3, 1, 3, 2, 1, 3, 1, 3, 2, 2, 1, 2, 2, 3,
-    1,
-];
-
-fn set_device_mode(device_name: &str, mode: &str) -> Result<(), Box<dyn Error>> {
-    let mut pin = Gpio::new()?.get(GPIO_LED)?.into_output();
+fn set_device_mode(
+    device_name: &str,
+    mode: &str,
+    sender_state: SenderState,
+) -> Result<(), Box<dyn Error>> {
     match device_name {
         "all" if (mode == "on") => {
-            send_group_code(&SENDER_ONE, nexa::DeviceMode::On, &mut pin);
-            send_group_code(&SENDER_TWO, nexa::DeviceMode::On, &mut pin);
-            send_group_code(&SENDER_THREE, nexa::DeviceMode::On, &mut pin)
+            sender_state.sender_one.turn_group_on();
+            sender_state.sender_two.turn_group_on();
+            sender_state.sender_three.turn_group_on();
         }
         "all" if (mode == "off") => {
-            send_group_code(&SENDER_ONE, nexa::DeviceMode::Off, &mut pin);
-            send_group_code(&SENDER_TWO, nexa::DeviceMode::Off, &mut pin);
-            send_group_code(&SENDER_THREE, nexa::DeviceMode::Off, &mut pin)
+            sender_state.sender_one.turn_group_off();
+            sender_state.sender_two.turn_group_off();
+            sender_state.sender_three.turn_group_off();
         }
-        "m1" if (mode == "on") => send_group_code(&SENDER_ONE, nexa::DeviceMode::On, &mut pin),
-        "m1" if (mode == "off") => send_group_code(&SENDER_ONE, nexa::DeviceMode::Off, &mut pin),
-        "m2" if (mode == "on") => send_group_code(&SENDER_TWO, nexa::DeviceMode::On, &mut pin),
-        "m2" if (mode == "off") => send_group_code(&SENDER_TWO, nexa::DeviceMode::Off, &mut pin),
-        "m3" if (mode == "on") => send_group_code(&SENDER_THREE, nexa::DeviceMode::On, &mut pin),
-        "m3" if (mode == "off") => send_group_code(&SENDER_THREE, nexa::DeviceMode::Off, &mut pin),
-        "1" if (mode == "on") => send_code2(
-            &SENDER_ONE,
-            nexa::DeviceNumber::One,
-            nexa::DeviceMode::On,
-            &mut pin,
-        ),
-        "1" if (mode == "off") => send_code2(
-            &SENDER_ONE,
-            nexa::DeviceNumber::One,
-            nexa::DeviceMode::Off,
-            &mut pin,
-        ),
-        "2" if (mode == "on") => send_code(&TWO_ON, &mut pin),
-        "2" if (mode == "off") => send_code(&TWO_OFF, &mut pin),
-        "3" if (mode == "on") => send_code2(
-            &SENDER_ONE,
-            nexa::DeviceNumber::Three,
-            nexa::DeviceMode::On,
-            &mut pin,
-        ),
-        "3" if (mode == "off") => send_code2(
-            &SENDER_ONE,
-            nexa::DeviceNumber::Three,
-            nexa::DeviceMode::Off,
-            &mut pin,
-        ),
-        "4" if (mode == "on") => send_code2(
-            &SENDER_TWO,
-            nexa::DeviceNumber::One,
-            nexa::DeviceMode::On,
-            &mut pin,
-        ),
-        "4" if (mode == "off") => send_code2(
-            &SENDER_TWO,
-            nexa::DeviceNumber::One,
-            nexa::DeviceMode::Off,
-            &mut pin,
-        ),
-        "5" if (mode == "on") => send_code(&FIVE_ON, &mut pin),
-        "5" if (mode == "off") => send_code(&FIVE_OFF, &mut pin),
-        "6" if (mode == "on") => send_code2(
-            &SENDER_TWO,
-            nexa::DeviceNumber::Three,
-            nexa::DeviceMode::On,
-            &mut pin,
-        ),
-        "6" if (mode == "off") => send_code2(
-            &SENDER_TWO,
-            nexa::DeviceNumber::Three,
-            nexa::DeviceMode::Off,
-            &mut pin,
-        ),
-        "7" if (mode == "on") => send_code2(
-            &SENDER_THREE,
-            nexa::DeviceNumber::One,
-            nexa::DeviceMode::On,
-            &mut pin,
-        ),
-        "7" if (mode == "off") => send_code2(
-            &SENDER_THREE,
-            nexa::DeviceNumber::One,
-            nexa::DeviceMode::Off,
-            &mut pin,
-        ),
-        "8" if (mode == "on") => send_code2(
-            &SENDER_THREE,
-            nexa::DeviceNumber::Two,
-            nexa::DeviceMode::On,
-            &mut pin,
-        ),
-        "8" if (mode == "off") => send_code2(
-            &SENDER_THREE,
-            nexa::DeviceNumber::Two,
-            nexa::DeviceMode::Off,
-            &mut pin,
-        ),
-        "9" if (mode == "on") => send_code2(
-            &SENDER_THREE,
-            nexa::DeviceNumber::Three,
-            nexa::DeviceMode::On,
-            &mut pin,
-        ),
-        "9" if (mode == "off") => send_code2(
-            &SENDER_THREE,
-            nexa::DeviceNumber::Three,
-            nexa::DeviceMode::Off,
-            &mut pin,
-        ),
+        "m1" if (mode == "on") => sender_state.sender_one.turn_group_on(),
+        "m1" if (mode == "off") => sender_state.sender_one.turn_group_off(),
+        "m2" if (mode == "on") => sender_state.sender_two.turn_group_on(),
+        "m2" if (mode == "off") => sender_state.sender_two.turn_group_off(),
+        "m3" if (mode == "on") => sender_state.sender_two.turn_group_off(),
+        "m3" if (mode == "off") => sender_state.sender_two.turn_group_off(),
+        "1" if (mode == "on") => sender_state
+            .sender_one
+            .turn_device_on(nexa::DeviceNumber::One),
+        "1" if (mode == "off") => sender_state
+            .sender_one
+            .turn_device_off(nexa::DeviceNumber::One),
+        "2" if (mode == "on") => sender_state
+            .sender_one
+            .turn_device_on(nexa::DeviceNumber::Two),
+        "2" if (mode == "off") => sender_state
+            .sender_one
+            .turn_device_off(nexa::DeviceNumber::Two),
+        "3" if (mode == "on") => sender_state
+            .sender_one
+            .turn_device_on(nexa::DeviceNumber::Three),
+        "3" if (mode == "off") => sender_state
+            .sender_one
+            .turn_device_off(nexa::DeviceNumber::Three),
+        "4" if (mode == "on") => sender_state
+            .sender_two
+            .turn_device_on(nexa::DeviceNumber::One),
+        "4" if (mode == "off") => sender_state
+            .sender_two
+            .turn_device_off(nexa::DeviceNumber::One),
+        "5" if (mode == "on") => sender_state
+            .sender_two
+            .turn_device_on(nexa::DeviceNumber::Two),
+        "5" if (mode == "off") => sender_state
+            .sender_two
+            .turn_device_off(nexa::DeviceNumber::Two),
+        "6" if (mode == "on") => sender_state
+            .sender_two
+            .turn_device_on(nexa::DeviceNumber::Three),
+        "6" if (mode == "off") => sender_state
+            .sender_two
+            .turn_device_off(nexa::DeviceNumber::Three),
+        "7" if (mode == "on") => sender_state
+            .sender_three
+            .turn_device_on(nexa::DeviceNumber::One),
+        "7" if (mode == "off") => sender_state
+            .sender_three
+            .turn_device_off(nexa::DeviceNumber::One),
+        "8" if (mode == "on") => sender_state
+            .sender_three
+            .turn_device_on(nexa::DeviceNumber::Two),
+        "8" if (mode == "off") => sender_state
+            .sender_three
+            .turn_device_off(nexa::DeviceNumber::Two),
+        "9" if (mode == "on") => sender_state
+            .sender_three
+            .turn_device_on(nexa::DeviceNumber::Three),
+        "9" if (mode == "off") => sender_state
+            .sender_three
+            .turn_device_off(nexa::DeviceNumber::Three),
+        "10" if (mode == "on") => sender_state
+            .sender_four
+            .turn_device_on(nexa::DeviceNumber::One),
+        "10" if (mode == "off") => sender_state
+            .sender_four
+            .turn_device_off(nexa::DeviceNumber::One),
         _ => println!("Unknown"),
     }
     Ok(())
 }
 
 #[get("/<device>?<mode>&<delay>")]
-fn set_device(device: String, mode: String, delay: Option<u64>) -> String {
+fn set_device(
+    device: String,
+    mode: String,
+    delay: Option<u64>,
+    sender_state: State<SenderState>,
+) -> String {
     match delay {
         Some(x) if x > 0 => {
             info!("Delay was set to {} for {}", x, device);
+            let sender = sender_state.inner().clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_secs(x));
-                match set_device_mode(device.as_ref(), "off") {
+                match set_device_mode(device.as_ref(), "off", sender) {
                     Ok(_) => info!("Device {} was turned off", device),
                     Err(x) => warn!("Could not turn {} off ({})", device, x),
                 }
@@ -182,7 +140,7 @@ fn set_device(device: String, mode: String, delay: Option<u64>) -> String {
         }
         None | Some(_) => {
             info!("Setting {} to {}", device, mode);
-            match set_device_mode(device.as_ref(), mode.as_ref()) {
+            match set_device_mode(device.as_ref(), mode.as_ref(), sender_state.inner().clone()) {
                 Ok(_) => "Success".to_string(),
                 Err(x) => x.to_string(),
             }
@@ -190,26 +148,19 @@ fn set_device(device: String, mode: String, delay: Option<u64>) -> String {
     }
 }
 
-fn send_group_code(sender: &nexa::Nexa, mode: nexa::DeviceMode, pin: &mut OutputPin) {
-    match mode {
-        nexa::DeviceMode::On => sender.turn_group_on(pin),
-        nexa::DeviceMode::Off => sender.turn_group_off(pin),
-    }
-}
-
-fn send_code2(
-    sender: &nexa::Nexa,
-    device: nexa::DeviceNumber,
-    mode: nexa::DeviceMode,
-    pin: &mut OutputPin,
-) {
-    match mode {
-        nexa::DeviceMode::On => sender.turn_device_on(device, pin),
-        nexa::DeviceMode::Off => sender.turn_device_off(device, pin),
-    }
-}
-
 fn main() {
+    const GPIO_LED: u8 = 17;
+    let pin = Arc::new(Mutex::new(
+        Gpio::new().unwrap().get(GPIO_LED).unwrap().into_output(),
+    ));
+
+    let nexa_state = SenderState {
+        sender_one: nexa::Nexa::new("11000000000000000000000010", Arc::clone(&pin)),
+        sender_two: nexa::Nexa::new("11000000000000000000000001", Arc::clone(&pin)),
+        sender_three: nexa::Nexa::new("11000000000000000000000000", Arc::clone(&pin)),
+        sender_four: nexa::Nexa::new("11000000000000000000000011", Arc::clone(&pin))
+    };
+
     let logfile = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new("{d} - {m}{n}")))
         .build("urban-enigma.log")
@@ -233,46 +184,8 @@ fn main() {
         .unwrap();
 
     rocket::custom(config)
+        .manage(nexa_state)
         .mount("/api/set", routes![set_device])
         .mount("/", StaticFiles::from("/home/pi/home-automation/"))
         .launch();
-}
-
-fn send_code(code: &[i32], pin: &mut OutputPin) {
-    for _x in 0..5 {
-        send_one(pin);
-        thread::sleep(Duration::from_micros(FIRST_PAUSE_LENGTH));
-        for _i in code {
-            if *_i == 1 {
-                send_one(pin);
-            } else if *_i == 2 {
-                send_two(pin);
-            }
-            if *_i == 3 {
-                send_three(pin);
-            }
-            thread::sleep(Duration::from_micros(PULSE_PAUSE_LENGTH));
-        }
-        thread::sleep(Duration::from_millis(200));
-    }
-}
-
-fn send_one(pin: &mut OutputPin) {
-    pin.set_high();
-    thread::sleep(Duration::from_micros(ONE_LENGTH));
-    pin.set_low();
-}
-
-fn send_two(pin: &mut OutputPin) {
-    send_one(pin);
-    thread::sleep(Duration::from_micros(LOW_PAUSE_LENGTH));
-    send_one(pin);
-}
-
-fn send_three(pin: &mut OutputPin) {
-    send_one(pin);
-    thread::sleep(Duration::from_micros(LOW_PAUSE_LENGTH));
-    send_one(pin);
-    thread::sleep(Duration::from_micros(LOW_PAUSE_LENGTH));
-    send_one(pin);
 }

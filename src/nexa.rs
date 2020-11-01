@@ -1,5 +1,7 @@
 use rppal::gpio::OutputPin;
 use std::fmt;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -18,8 +20,10 @@ const NEXA_CHANNEL: &str = "11";
 // GOCCEE
 // 123456
 
+#[derive(Clone)]
 pub struct Nexa<'a> {
     pub sender_id: &'a str,
+    pin: Arc<Mutex<OutputPin>>,
 }
 
 #[derive(Clone, Copy)]
@@ -45,11 +49,9 @@ impl fmt::Display for DeviceMode {
 }
 
 impl Nexa<'_> {
-    pub fn new(sender_id: &str) -> Nexa {
+    pub fn new(sender_id: &str, pin: Arc<Mutex<OutputPin>>) -> Nexa {
         assert!(sender_id.len() == 26);
-        Nexa {
-            sender_id,
-        }
+        Nexa { sender_id, pin }
     }
 
     fn get_code(&self, whole_group: bool, device_no: DeviceNumber, mode: DeviceMode) -> String {
@@ -68,80 +70,84 @@ impl Nexa<'_> {
         )
     }
 
-    pub fn turn_device_on(&self, device_no: DeviceNumber, pin: &mut OutputPin) {
+    pub fn turn_device_on(&self, device_no: DeviceNumber) {
         println!("turning device on");
         for _ in 0..5 {
             let code = self.get_code(false, device_no, DeviceMode::On);
-            self.write_code(&code, pin)
+            self.write_code(&code)
         }
     }
 
-    pub fn turn_device_off(&self, device_no: DeviceNumber, pin: &mut OutputPin) {
+    pub fn turn_device_off(&self, device_no: DeviceNumber) {
         let code = self.get_code(false, device_no, DeviceMode::Off);
         for _ in 0..5 {
-            self.write_code(&code, pin)
+            self.write_code(&code)
         }
     }
 
-    pub fn turn_group_off(&self, pin: &mut OutputPin) {
+    pub fn turn_group_off(&self) {
         let code = self.get_code(true, DeviceNumber::One, DeviceMode::Off);
         for _ in 0..5 {
-            self.write_code(&code, pin);
+            self.write_code(&code);
         }
     }
 
-    pub fn turn_group_on(&self, pin: &mut OutputPin) {
+    pub fn turn_group_on(&self) {
         let code = self.get_code(true, DeviceNumber::One, DeviceMode::On);
         for _ in 0..5 {
-            self.write_code(&code, pin);
+            self.write_code(&code);
         }
     }
 
-    fn write_code(&self, code: &str, pin: &mut OutputPin) {
+    fn write_code(&self, code: &str) {
         assert!(code.len() == 32);
-        self.send_sync(pin);
+        self.send_sync();
         for c in code.chars() {
             match c {
-                '1' => self.send_one(pin),
-                '0' => self.send_zero(pin),
+                '1' => self.send_one(),
+                '0' => self.send_zero(),
                 _ => panic!("Illegal code"),
             }
         }
-        self.send_pause(pin);
+        self.send_pause();
     }
 
-    fn send_zero(&self, pin: &mut OutputPin) {
-        self.send_physical_zero(pin);
-        self.send_physical_one(pin);
+    fn send_zero(&self) {
+        self.send_physical_zero();
+        self.send_physical_one();
     }
 
-    fn send_one(&self, pin: &mut OutputPin) {
-        self.send_physical_one(pin);
-        self.send_physical_zero(pin);
+    fn send_one(&self) {
+        self.send_physical_one();
+        self.send_physical_zero();
     }
 
-    fn send_physical_one(&self, pin: &mut OutputPin) {
+    fn send_physical_one(&self) {
+        let mut pin = self.pin.lock().unwrap();
         pin.set_high();
         thread::sleep(Duration::from_micros(PULSE_LENGTH));
         pin.set_low();
         thread::sleep(Duration::from_micros(PULSE_LENGTH));
     }
 
-    fn send_physical_zero(&self, pin: &mut OutputPin) {
+    fn send_physical_zero(&self) {
+        let mut pin = self.pin.lock().unwrap();
         pin.set_high();
         thread::sleep(Duration::from_micros(PULSE_LENGTH));
         pin.set_low();
         thread::sleep(Duration::from_micros(5 * PULSE_LENGTH));
     }
 
-    fn send_sync(&self, pin: &mut OutputPin) {
+    fn send_sync(&self) {
+        let mut pin = self.pin.lock().unwrap();
         pin.set_high();
         thread::sleep(Duration::from_micros(PULSE_LENGTH));
         pin.set_low();
         thread::sleep(Duration::from_micros(10 * PULSE_LENGTH));
     }
 
-    fn send_pause(&self, pin: &mut OutputPin) {
+    fn send_pause(&self) {
+        let mut pin = self.pin.lock().unwrap();
         pin.set_high();
         thread::sleep(Duration::from_micros(PULSE_LENGTH));
         pin.set_low();

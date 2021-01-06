@@ -6,8 +6,10 @@ extern crate log4rs;
 
 use std::thread;
 mod nexa;
+mod repo;
 
 use rocket::config::{Config, Environment};
+use rocket_contrib::json::Json;
 use rocket_contrib::serve::StaticFiles;
 
 use std::error::Error;
@@ -29,6 +31,7 @@ struct SenderState<'a> {
     sender_two: nexa::Nexa<'a>,
     sender_three: nexa::Nexa<'a>,
     sender_four: nexa::Nexa<'a>,
+    repo: repo::Repo,
 }
 
 fn set_device_mode(
@@ -148,17 +151,26 @@ fn set_device(
     }
 }
 
+#[get("/")]
+fn get_devices(sender_state: State<SenderState>) -> Json<Vec<repo::Device>> {
+    Json(sender_state.repo.get_devices().unwrap())
+}
+
 fn main() {
     const GPIO_LED: u8 = 17;
     let pin = Arc::new(Mutex::new(
         Gpio::new().unwrap().get(GPIO_LED).unwrap().into_output(),
     ));
 
+    let repo = repo::Repo::new("/home/pi/test.db");
+    repo.assure_created().unwrap();
+
     let nexa_state = SenderState {
-        sender_one: nexa::Nexa::new("11000000000000000000000010", Arc::clone(&pin)),
-        sender_two: nexa::Nexa::new("11000000000000000000000001", Arc::clone(&pin)),
-        sender_three: nexa::Nexa::new("11000000000000000000000000", Arc::clone(&pin)),
-        sender_four: nexa::Nexa::new("11000000000000000000000011", Arc::clone(&pin))
+        sender_one: nexa::Nexa::new("11000000000000000000000010", Arc::clone(&pin)), //50331650
+        sender_two: nexa::Nexa::new("11000000000000000000000001", Arc::clone(&pin)), //50331649
+        sender_three: nexa::Nexa::new("11000000000000000000000000", Arc::clone(&pin)), // 50331648
+        sender_four: nexa::Nexa::new("11000000000000000000000011", Arc::clone(&pin)), // 50331651
+        repo,
     };
 
     let logfile = FileAppender::builder()
@@ -186,6 +198,7 @@ fn main() {
     rocket::custom(config)
         .manage(nexa_state)
         .mount("/api/set", routes![set_device])
+        .mount("/api/", routes![get_devices])
         .mount("/", StaticFiles::from("/home/pi/home-automation/"))
         .launch();
 }

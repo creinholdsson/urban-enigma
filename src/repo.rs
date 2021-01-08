@@ -4,15 +4,15 @@ use std::fs;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Device {
-    id: i64,
-    name: String,
-    group_id: i32,
-    current_state: bool,
+    pub id: i64,
+    pub name: String,
+    pub group_id: i32,
+    pub current_state: bool,
 }
 
 #[derive(Default, Clone)]
-pub struct Repo {
-    connection_string: String,
+pub struct Repo<'a> {
+    connection_string: &'a str,
 }
 
 impl Device {
@@ -26,10 +26,10 @@ impl Device {
     }
 }
 
-impl Repo {
+impl Repo<'_> {
     pub fn new(connection_string: &str) -> Repo {
         Repo {
-            connection_string: String::from(connection_string),
+            connection_string: connection_string,
         }
     }
 

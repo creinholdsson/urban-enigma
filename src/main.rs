@@ -1,7 +1,7 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 #[macro_use]
 extern crate rocket;
-use log::{info, warn};
+use log::{error, info, warn};
 extern crate log4rs;
 
 use std::thread;
@@ -31,13 +31,13 @@ struct SenderState<'a> {
     sender_two: nexa::Nexa<'a>,
     sender_three: nexa::Nexa<'a>,
     sender_four: nexa::Nexa<'a>,
-    repo: repo::Repo,
+    repo: repo::Repo<'a>,
 }
 
 fn set_device_mode(
     device_name: &str,
     mode: &str,
-    sender_state: SenderState,
+    sender_state: &SenderState,
 ) -> Result<(), Box<dyn Error>> {
     match device_name {
         "all" if (mode == "on") => {
@@ -134,7 +134,7 @@ fn set_device(
             let sender = sender_state.inner().clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_secs(x));
-                match set_device_mode(device.as_ref(), "off", sender) {
+                match set_device_mode(device.as_ref(), "off", &sender) {
                     Ok(_) => info!("Device {} was turned off", device),
                     Err(x) => warn!("Could not turn {} off ({})", device, x),
                 }
@@ -143,12 +143,77 @@ fn set_device(
         }
         None | Some(_) => {
             info!("Setting {} to {}", device, mode);
-            match set_device_mode(device.as_ref(), mode.as_ref(), sender_state.inner().clone()) {
+            match set_device_mode(
+                device.as_ref(),
+                mode.as_ref(),
+                &sender_state.inner().clone(),
+            ) {
                 Ok(_) => "Success".to_string(),
                 Err(x) => x.to_string(),
             }
         }
     }
+}
+
+#[post("/<device_id>?<mode>&<delay>")]
+fn post_device(
+    device_id: i64,
+    mode: String,
+    delay: Option<u64>,
+    sender_state: State<SenderState>,
+) -> Option<Json<repo::Device>> {
+    return match sender_state.repo.get_device(device_id).as_mut() {
+        Ok(None) => return None,
+        Ok(Some(device)) => {
+            return match delay {
+                Some(x) if x > 0 => {
+                    let sender = sender_state.inner().clone();
+                    let device_str: String = device_id.to_string();
+                    let d = device.clone();
+                    thread::spawn(move || {
+                        thread::sleep(Duration::from_secs(x));
+                        match set_device_mode(&device_str, "off", &sender) {
+                            Ok(_) => {
+                                sender.repo.update_device(&d).unwrap_or_else(|e| {
+                                    error!("Failed to update {}", e);
+                                    true
+                                });
+                            }
+                            Err(err) => {
+                                error!(
+                                    "Could not turn {} off with delay ({}) {}",
+                                    device_str, x, err
+                                );
+                                // true
+                            }
+                        }
+                    });
+                    Some(Json(device.clone()))
+                }
+                None | Some(_) => match mode.as_ref() {
+                    "on" => {
+                        device.current_state = true;
+                        sender_state.repo.update_device(&device).unwrap();
+                        set_device_mode(device_id.to_string().as_ref(), "on", &sender_state)
+                            .unwrap();
+                        Some(Json(device.clone()))
+                    }
+                    "off" => {
+                        device.current_state = true;
+                        sender_state.repo.update_device(&device).unwrap();
+                        set_device_mode(device_id.to_string().as_ref(), "off", &sender_state)
+                            .unwrap();
+                        Some(Json(device.clone()))
+                    }
+                    _ => None,
+                },
+            };
+        }
+        Err(x) => {
+            error!("Error: {}", x);
+            None
+        }
+    };
 }
 
 #[get("/")]
@@ -197,7 +262,7 @@ fn main() {
 
     rocket::custom(config)
         .manage(nexa_state)
-        .mount("/api/set", routes![set_device])
+        .mount("/api/set", routes![set_device, post_device])
         .mount("/api/", routes![get_devices])
         .mount("/", StaticFiles::from("/home/pi/home-automation/"))
         .launch();

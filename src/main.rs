@@ -199,7 +199,7 @@ fn post_device(
                         Some(Json(device.clone()))
                     }
                     "off" => {
-                        device.current_state = true;
+                        device.current_state = false;
                         sender_state.repo.update_device(&device).unwrap();
                         set_device_mode(device_id.to_string().as_ref(), "off", &sender_state)
                             .unwrap();

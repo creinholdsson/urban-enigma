@@ -71,7 +71,6 @@ impl Nexa<'_> {
     }
 
     pub fn turn_device_on(&self, device_no: DeviceNumber) {
-        println!("turning device on");
         for _ in 0..5 {
             let code = self.get_code(false, device_no, DeviceMode::On);
             self.write_code(&code)

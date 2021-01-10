@@ -1,6 +1,5 @@
 use rusqlite::{params, Connection, Error, Result, NO_PARAMS};
 use serde::Serialize;
-use std::fs;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Device {
@@ -8,6 +7,7 @@ pub struct Device {
     pub name: String,
     pub group_id: i32,
     pub current_state: bool,
+    pub references: String,
 }
 
 #[derive(Default, Clone)]
@@ -22,15 +22,14 @@ impl Device {
             name: String::from(name),
             group_id,
             current_state,
+            references: String::new(),
         }
     }
 }
 
 impl Repo<'_> {
     pub fn new(connection_string: &str) -> Repo {
-        Repo {
-            connection_string: connection_string,
-        }
+        Repo { connection_string }
     }
 
     pub fn assure_created(&self) -> Result<bool> {
@@ -56,7 +55,12 @@ impl Repo<'_> {
 				name VARCHAR(100) NOT NULL,
 				group_id INTEGER NOT NULL,
 				current_state BIT NOT NULL DEFAULT 0
-			)
+			);
+			CREATE TABLE device_ref_device (
+				id integer primary key AUTOINCREMENT,
+				device_id integer REFERENCES devices(id) not null,
+				reference_device_id integer references devices(id) not null
+			);
     		",
             params![],
         ) {
@@ -70,8 +74,11 @@ impl Repo<'_> {
     pub fn get_devices(&self) -> Result<Vec<Device>> {
         let conn = Connection::open(&self.connection_string)?;
 
-        let mut statement =
-            conn.prepare("SELECT id, name, group_id, current_state FROM devices")?;
+        let mut statement = conn.prepare(
+            "select id, name, group_id, current_state, coalesce(reftable.[references],'') from devices as d
+left outer join (select group_concat(reference_device_id) as [references], device_id 
+from device_ref_device group by device_id) as reftable on d.id = reftable.device_id",
+        )?;
 
         let mut result: Vec<Device> = vec![];
 
@@ -81,6 +88,7 @@ impl Repo<'_> {
                 name: row.get(1)?,
                 group_id: row.get(2)?,
                 current_state: row.get(3)?,
+                references: row.get(4)?,
             })
         })?;
 
@@ -93,7 +101,8 @@ impl Repo<'_> {
         let conn = Connection::open(&self.connection_string)?;
 
         return match conn.query_row(
-            "SELECT id, name, group_id, current_state FROM devices WHERE id = ?1",
+            "SELECT id, name, group_id, current_state, coalesce((select group_concat(reference_device_id) 
+            from device_ref_device where device_id=?1),'') as [references] FROM devices WHERE id = ?1",
             params![id],
             |row| {
                 Ok(Device {
@@ -101,6 +110,7 @@ impl Repo<'_> {
                     name: row.get(1)?,
                     group_id: row.get(2)?,
                     current_state: row.get(3)?,
+                    references: row.get(4)?,
                 })
             },
         ) {
@@ -117,8 +127,10 @@ impl Repo<'_> {
     pub fn get_group(&self, group_id: i32) -> Result<Vec<Device>> {
         let conn = Connection::open(&self.connection_string)?;
 
-        let mut statement =
-            conn.prepare("SELECT id, name, group_id, current_state FROM devices WHERE id = ?1")?;
+        let mut statement = conn
+            .prepare("select id, name, group_id, current_state, coalesce(reftable.[references],'') from devices as d
+left outer join (select group_concat(reference_device_id) as [references], device_id 
+from device_ref_device group by device_id) as reftable on d.id = reftable.device_id WHERE group_id = ?1")?;
 
         let device_iter = statement.query_map(params![group_id], |row| {
             Ok(Device {
@@ -126,6 +138,7 @@ impl Repo<'_> {
                 name: row.get(1)?,
                 group_id: row.get(2)?,
                 current_state: row.get(3)?,
+                references: row.get(4)?,
             })
         })?;
 
@@ -157,9 +170,9 @@ impl Repo<'_> {
     pub fn update_device(&self, device: &Device) -> Result<bool> {
         let conn = Connection::open(&self.connection_string)?;
         let mut statement =
-            conn.prepare("UPDATE devices SET name = ?1, current_state = ?2 WHERE id = ?3")?;
+            conn.prepare("UPDATE devices SET current_state = ?1 WHERE id in (select reference_device_id from device_ref_device where device_id=?2) or id = ?2")?;
 
-        return match statement.execute(params![device.name, device.current_state, device.id]) {
+        return match statement.execute(params![device.current_state, device.id]) {
             Ok(_) => Ok(true),
             Err(err) => Err(err),
         };
@@ -167,11 +180,10 @@ impl Repo<'_> {
 
     pub fn update_devices(&self, devices: &[Device]) -> Result<bool> {
         let conn = Connection::open(&self.connection_string)?;
-        let mut statement =
-            conn.prepare("UPDATE devices SET name = ?1, current_state = ?2 WHERE id = ?3")?;
+        let mut statement = conn.prepare("UPDATE devices set current_state=?1 where id=?2")?;
 
         for device in devices.iter() {
-            match statement.execute(params![device.name, device.current_state, device.id]) {
+            match statement.execute(params![device.current_state, device.id]) {
                 Ok(_) => {}
                 Err(err) => return Err(err),
             }
@@ -189,7 +201,7 @@ fn test_device_empty_database() {
     assert!(device.is_ok());
     assert!(device.unwrap().is_none());
 
-    fs::remove_file("test.db").unwrap();
+    std::fs::remove_file("test.db").unwrap();
 }
 
 #[test]
@@ -203,7 +215,7 @@ fn test_non_existing_database() {
     assert!(created.unwrap() == true);
     assert!(created2.unwrap() == true);
 
-    fs::remove_file("test.db").unwrap();
+    std::fs::remove_file("test.db").unwrap();
 }
 
 #[test]
@@ -234,7 +246,7 @@ fn test_insert_device() {
 
     assert!(1 == group.len());
 
-    fs::remove_file("test.db").unwrap();
+    std::fs::remove_file("test.db").unwrap();
 }
 
 #[test]
@@ -259,7 +271,7 @@ fn test_update_device() {
     let updated_device = updated.unwrap().unwrap();
 
     assert!(true == updated_device.current_state);
-    fs::remove_file("test.db").unwrap();
+    std::fs::remove_file("test.db").unwrap();
 }
 
 #[test]

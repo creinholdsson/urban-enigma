@@ -24,6 +24,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use std::sync::{Arc, Mutex};
 
 use rocket::State;
+use ureq;
 
 #[derive(Clone)]
 struct SenderState<'a> {
@@ -32,6 +33,15 @@ struct SenderState<'a> {
     sender_three: nexa::Nexa<'a>,
     sender_four: nexa::Nexa<'a>,
     repo: repo::Repo<'a>,
+}
+
+fn call_external_device(base_url: &str, device_id: &str, mode: &str) -> Result<(), Box<dyn Error>> {
+    let url = format!("{}/{}/{}", base_url, device_id, mode);
+
+    match ureq::get(&url).call() {
+        Ok(_) => Ok(()),
+        Err(err) => Err(Box::new(err)),
+    }
 }
 
 fn set_device_mode(
@@ -116,6 +126,9 @@ fn set_device_mode(
         "10" if (mode == "off") => sender_state
             .sender_four
             .turn_device_off(nexa::DeviceNumber::One),
+        "11" => call_external_device("http://192.168.10.124", "4", mode).unwrap(),
+        "12" => call_external_device("http://192.168.10.124", "5", mode).unwrap(),
+
         _ => println!("Unknown"),
     }
     Ok(())

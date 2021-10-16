@@ -64,10 +64,8 @@ impl Repo<'_> {
     		",
             params![],
         ) {
-            Ok(_) => return Ok(true),
-            Err(err) => {
-                return Err(err);
-            }
+            Ok(_) => Ok(true),
+            Err(err) => Err(err),
         }
     }
 
@@ -158,11 +156,11 @@ from device_ref_device group by device_id) as reftable on d.id = reftable.device
         match statement.insert(params![device.name, device.group_id]) {
             Ok(id) => {
                 device.id = id;
-                return Ok(true);
+                Ok(true)
             }
             Err(err) => {
                 println!("insert err: {}", err);
-                return Err(err);
+                Err(err)
             }
         }
     }
@@ -172,10 +170,10 @@ from device_ref_device group by device_id) as reftable on d.id = reftable.device
         let mut statement =
             conn.prepare("UPDATE devices SET current_state = ?1 WHERE id in (select reference_device_id from device_ref_device where device_id=?2) or id = ?2")?;
 
-        return match statement.execute(params![device.current_state, device.id]) {
+        match statement.execute(params![device.current_state, device.id]) {
             Ok(_) => Ok(true),
             Err(err) => Err(err),
-        };
+        }
     }
 
     pub fn update_devices(&self, devices: &[Device]) -> Result<bool> {

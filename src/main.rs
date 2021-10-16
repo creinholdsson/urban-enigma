@@ -24,7 +24,6 @@ use log4rs::encode::pattern::PatternEncoder;
 use std::sync::{Arc, Mutex};
 
 use rocket::State;
-use ureq;
 
 #[derive(Clone)]
 struct SenderState<'a> {
@@ -44,7 +43,10 @@ fn call_external_device(base_url: &str, device_id: &str, mode: &str) -> Result<(
     }
 }
 
-fn get_device_number_from_id<'b, 'a>(id: &'b str, state: &'a SenderState) -> Option<(&'a nexa::Nexa<'a>, nexa::DeviceNumber)> {
+fn get_device_number_from_id<'b, 'a>(
+    id: &'b str,
+    state: &'a SenderState,
+) -> Option<(&'a nexa::Nexa<'a>, nexa::DeviceNumber)> {
     match id {
         "1" => Some((&state.sender_one, nexa::DeviceNumber::One)),
         "2" => Some((&state.sender_one, nexa::DeviceNumber::Two)),
@@ -169,14 +171,14 @@ fn post_device(
                 None | Some(_) => match mode.as_ref() {
                     "on" => {
                         device.current_state = true;
-                        sender_state.repo.update_device(&device).unwrap();
+                        sender_state.repo.update_device(device).unwrap();
                         set_device_mode(device_id.to_string().as_ref(), "on", &sender_state)
                             .unwrap();
                         Some(Json(device.clone()))
                     }
                     "off" => {
                         device.current_state = false;
-                        sender_state.repo.update_device(&device).unwrap();
+                        sender_state.repo.update_device(device).unwrap();
                         set_device_mode(device_id.to_string().as_ref(), "off", &sender_state)
                             .unwrap();
                         Some(Json(device.clone()))
@@ -231,21 +233,21 @@ fn main() {
     log4rs::init_config(log_config).unwrap();
 
     let state2 = nexa_state.clone();
-    thread::spawn(move || {
-        loop {
-            if let Ok(devices) = state2.repo.get_devices() {
-                for device in devices.iter() {
-                    let device_name = device.id.to_string();
-                    if let Some((sender, device_number)) = get_device_number_from_id(&device_name, &state2) {
-                        match device.current_state {
-                            true => sender.turn_device_on(device_number),
-                            false => sender.turn_device_off(device_number)
-                        }
+    thread::spawn(move || loop {
+        if let Ok(devices) = state2.repo.get_devices() {
+            for device in devices.iter() {
+                let device_name = device.id.to_string();
+                if let Some((sender, device_number)) =
+                    get_device_number_from_id(&device_name, &state2)
+                {
+                    match device.current_state {
+                        true => sender.turn_device_on(device_number),
+                        false => sender.turn_device_off(device_number),
                     }
                 }
             }
-            thread::sleep(Duration::from_secs(120));
         }
+        thread::sleep(Duration::from_secs(120));
     });
 
     let config = Config::build(Environment::Production)

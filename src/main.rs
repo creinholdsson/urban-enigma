@@ -44,11 +44,34 @@ fn call_external_device(base_url: &str, device_id: &str, mode: &str) -> Result<(
     }
 }
 
+fn get_device_number_from_id<'b, 'a>(id: &'b str, state: &'a SenderState) -> Option<(&'a nexa::Nexa<'a>, nexa::DeviceNumber)> {
+    match id {
+        "1" => Some((&state.sender_one, nexa::DeviceNumber::One)),
+        "2" => Some((&state.sender_one, nexa::DeviceNumber::Two)),
+        "3" => Some((&state.sender_one, nexa::DeviceNumber::Three)),
+        "4" => Some((&state.sender_two, nexa::DeviceNumber::One)),
+        "5" => Some((&state.sender_two, nexa::DeviceNumber::Two)),
+        "6" => Some((&state.sender_two, nexa::DeviceNumber::Three)),
+        "7" => Some((&state.sender_three, nexa::DeviceNumber::One)),
+        "8" => Some((&state.sender_three, nexa::DeviceNumber::Two)),
+        "9" => Some((&state.sender_three, nexa::DeviceNumber::Three)),
+        "10" => Some((&state.sender_four, nexa::DeviceNumber::One)),
+        _ => None,
+    }
+}
+
 fn set_device_mode(
     device_name: &str,
     mode: &str,
     sender_state: &SenderState,
 ) -> Result<(), Box<dyn Error>> {
+    if let Some((device, device_number)) = get_device_number_from_id(device_name, sender_state) {
+        match mode {
+            "on" => device.turn_device_on(device_number),
+            "off" => device.turn_device_off(device_number),
+            _ => {}
+        }
+    }
     match device_name {
         "all" if (mode == "on") => {
             sender_state.sender_one.turn_group_on();
@@ -66,66 +89,6 @@ fn set_device_mode(
         "m2" if (mode == "off") => sender_state.sender_two.turn_group_off(),
         "m3" if (mode == "on") => sender_state.sender_two.turn_group_off(),
         "m3" if (mode == "off") => sender_state.sender_two.turn_group_off(),
-        "1" if (mode == "on") => sender_state
-            .sender_one
-            .turn_device_on(nexa::DeviceNumber::One),
-        "1" if (mode == "off") => sender_state
-            .sender_one
-            .turn_device_off(nexa::DeviceNumber::One),
-        "2" if (mode == "on") => sender_state
-            .sender_one
-            .turn_device_on(nexa::DeviceNumber::Two),
-        "2" if (mode == "off") => sender_state
-            .sender_one
-            .turn_device_off(nexa::DeviceNumber::Two),
-        "3" if (mode == "on") => sender_state
-            .sender_one
-            .turn_device_on(nexa::DeviceNumber::Three),
-        "3" if (mode == "off") => sender_state
-            .sender_one
-            .turn_device_off(nexa::DeviceNumber::Three),
-        "4" if (mode == "on") => sender_state
-            .sender_two
-            .turn_device_on(nexa::DeviceNumber::One),
-        "4" if (mode == "off") => sender_state
-            .sender_two
-            .turn_device_off(nexa::DeviceNumber::One),
-        "5" if (mode == "on") => sender_state
-            .sender_two
-            .turn_device_on(nexa::DeviceNumber::Two),
-        "5" if (mode == "off") => sender_state
-            .sender_two
-            .turn_device_off(nexa::DeviceNumber::Two),
-        "6" if (mode == "on") => sender_state
-            .sender_two
-            .turn_device_on(nexa::DeviceNumber::Three),
-        "6" if (mode == "off") => sender_state
-            .sender_two
-            .turn_device_off(nexa::DeviceNumber::Three),
-        "7" if (mode == "on") => sender_state
-            .sender_three
-            .turn_device_on(nexa::DeviceNumber::One),
-        "7" if (mode == "off") => sender_state
-            .sender_three
-            .turn_device_off(nexa::DeviceNumber::One),
-        "8" if (mode == "on") => sender_state
-            .sender_three
-            .turn_device_on(nexa::DeviceNumber::Two),
-        "8" if (mode == "off") => sender_state
-            .sender_three
-            .turn_device_off(nexa::DeviceNumber::Two),
-        "9" if (mode == "on") => sender_state
-            .sender_three
-            .turn_device_on(nexa::DeviceNumber::Three),
-        "9" if (mode == "off") => sender_state
-            .sender_three
-            .turn_device_off(nexa::DeviceNumber::Three),
-        "10" if (mode == "on") => sender_state
-            .sender_four
-            .turn_device_on(nexa::DeviceNumber::One),
-        "10" if (mode == "off") => sender_state
-            .sender_four
-            .turn_device_off(nexa::DeviceNumber::One),
         "11" => call_external_device("http://192.168.10.124", "4", mode).unwrap(),
         "12" => call_external_device("http://192.168.10.124", "5", mode).unwrap(),
 
@@ -266,6 +229,24 @@ fn main() {
         .unwrap();
 
     log4rs::init_config(log_config).unwrap();
+
+    let state2 = nexa_state.clone();
+    thread::spawn(move || {
+        loop {
+            if let Ok(devices) = state2.repo.get_devices() {
+                for device in devices.iter() {
+                    let device_name = device.id.to_string();
+                    if let Some((sender, device_number)) = get_device_number_from_id(&device_name, &state2) {
+                        match device.current_state {
+                            true => sender.turn_device_on(device_number),
+                            false => sender.turn_device_off(device_number)
+                        }
+                    }
+                }
+            }
+            thread::sleep(Duration::from_secs(120));
+        }
+    });
 
     let config = Config::build(Environment::Production)
         .address("0.0.0.0")

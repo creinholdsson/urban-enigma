@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Error, Result, NO_PARAMS};
+use rusqlite::{params, Connection, Error, Result};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -37,7 +37,7 @@ impl Repo<'_> {
 
         let mut statement =
             conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'")?;
-        match statement.exists(NO_PARAMS) {
+        match statement.exists([]) {
             Ok(x) => {
                 if x {
                     return Ok(true);
@@ -82,7 +82,7 @@ from device_ref_device group by device_id) as reftable on d.id = reftable.device
 
         let mut result: Vec<Device> = vec![];
 
-        let device_iter = statement.query_map(NO_PARAMS, |row| {
+        let device_iter = statement.query_map([], |row| {
             Ok(Device {
                 id: row.get(0)?,
                 name: row.get(1)?,

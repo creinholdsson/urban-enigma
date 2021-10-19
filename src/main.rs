@@ -1,7 +1,7 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 #[macro_use]
 extern crate rocket;
-use log::{error, info, warn};
+use log::{error, info, warn, trace};
 extern crate log4rs;
 
 use std::thread;
@@ -11,13 +11,9 @@ mod repo;
 use rocket::config::{Config, Environment};
 use rocket_contrib::json::Json;
 use rocket_contrib::serve::StaticFiles;
-
 use std::error::Error;
-
 use rppal::gpio::Gpio;
-
 use std::time::Duration;
-
 use log::LevelFilter;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
@@ -199,6 +195,26 @@ fn get_devices(sender_state: State<SenderState>) -> Json<Vec<repo::Device>> {
     Json(sender_state.repo.get_devices().unwrap())
 }
 
+fn periodic_state_publish(sender: SenderState) {
+    loop {
+        if let Ok(devices) = sender.repo.get_devices() {
+            for device in devices.iter() {
+                let device_name = device.id.to_string();
+                if let Some((sender, device_number)) =
+                get_device_number_from_id(&device_name, &sender)
+                {
+                    match device.current_state {
+                        true => sender.turn_device_on(device_number),
+                        false => sender.turn_device_off(device_number),
+                    }
+                }
+            }
+        }
+        trace!("Sending periodic update");
+        thread::sleep(Duration::from_secs(120));
+    }
+}
+
 fn main() {
     const GPIO_LED: u8 = 17;
     let pin = Arc::new(Mutex::new(
@@ -233,22 +249,7 @@ fn main() {
     log4rs::init_config(log_config).unwrap();
 
     let state2 = nexa_state.clone();
-    thread::spawn(move || loop {
-        if let Ok(devices) = state2.repo.get_devices() {
-            for device in devices.iter() {
-                let device_name = device.id.to_string();
-                if let Some((sender, device_number)) =
-                    get_device_number_from_id(&device_name, &state2)
-                {
-                    match device.current_state {
-                        true => sender.turn_device_on(device_number),
-                        false => sender.turn_device_off(device_number),
-                    }
-                }
-            }
-        }
-        thread::sleep(Duration::from_secs(120));
-    });
+    thread::spawn(move || periodic_state_publish(state2));
 
     let config = Config::build(Environment::Production)
         .address("0.0.0.0")

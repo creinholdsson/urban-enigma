@@ -11,8 +11,8 @@ pub struct Device {
 }
 
 #[derive(Default, Clone)]
-pub struct Repo<'a> {
-    connection_string: &'a str,
+pub struct Repo {
+    connection_string: String,
 }
 
 impl Device {
@@ -27,9 +27,9 @@ impl Device {
     }
 }
 
-impl Repo<'_> {
+impl Repo {
     pub fn new(connection_string: &str) -> Repo {
-        Repo { connection_string }
+        Repo { connection_string: connection_string.to_string() }
     }
 
     pub fn assure_created(&self) -> Result<bool> {

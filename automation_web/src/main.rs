@@ -3,9 +3,9 @@
 extern crate rocket;
 use log::{error, info, warn, trace};
 extern crate log4rs;
+use nexa_rs::nexa;
 
 use std::thread;
-mod nexa;
 mod repo;
 
 use rocket::config::{Config, Environment};
@@ -27,7 +27,7 @@ struct SenderState<'a> {
     sender_two: nexa::Nexa<'a>,
     sender_three: nexa::Nexa<'a>,
     sender_four: nexa::Nexa<'a>,
-    repo: repo::Repo<'a>,
+    repo: repo::Repo,
 }
 
 fn call_external_device(base_url: &str, device_id: &str, mode: &str) -> Result<(), Box<dyn Error>> {

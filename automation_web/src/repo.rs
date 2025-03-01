@@ -29,7 +29,9 @@ impl Device {
 
 impl Repo {
     pub fn new(connection_string: &str) -> Repo {
-        Repo { connection_string: connection_string.to_string() }
+        Repo {
+            connection_string: connection_string.to_string(),
+        }
     }
 
     pub fn assure_created(&self) -> Result<bool> {
@@ -67,6 +69,13 @@ impl Repo {
             Ok(_) => Ok(true),
             Err(err) => Err(err),
         }
+    }
+
+    pub fn ensure_updated(&self) -> Result<bool> {
+        let conn = Connection::open(&self.connection_string)?;
+        let statement = conn.prepare("PRAGMA user_version")?;
+        
+        Ok(true)
     }
 
     pub fn get_devices(&self) -> Result<Vec<Device>> {
@@ -188,6 +197,22 @@ from device_ref_device group by device_id) as reftable on d.id = reftable.device
         }
         Ok(true)
     }
+
+    pub fn get_groups(&self) -> Result<Vec<i64>> {
+        let conn = Connection::open(&self.connection_string)?;
+        let mut statement = conn.prepare("SELECT group_id FROM devices")?;
+
+        let mut result: Vec<i64> = vec![];
+
+        let group_iter: Iter<Result<i32>> = statement.query_row([], |&row | {
+            Ok(row.get(0)?)
+        })?;
+        
+        group_iter.for_each(|id| {
+            result.append(id.unwrap());
+        });
+        Ok(result)
+        }
 }
 
 #[test]

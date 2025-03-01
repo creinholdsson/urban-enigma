@@ -2,5 +2,7 @@
 
 members = [
     "automation_web",
-    "nexa-rs"
+    "nexa-rs",
+    "rollo-rs",
+    "rollo-tester"
 ]

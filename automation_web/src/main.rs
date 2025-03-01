@@ -1,23 +1,24 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 #[macro_use]
 extern crate rocket;
-use log::{error, info, warn, trace};
+use log::{error, info, trace, warn};
 extern crate log4rs;
 use nexa_rs::nexa;
+use rollo_rs::rollo;
 
 use std::thread;
 mod repo;
 
-use rocket::config::{Config, Environment};
-use rocket_contrib::json::Json;
-use rocket_contrib::serve::StaticFiles;
-use std::error::Error;
-use rppal::gpio::Gpio;
-use std::time::Duration;
 use log::LevelFilter;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
+use rocket::config::{Config, Environment};
+use rocket_contrib::json::Json;
+use rocket_contrib::serve::StaticFiles;
+use rppal::gpio::Gpio;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use rocket::State;
 
@@ -27,6 +28,8 @@ struct SenderState<'a> {
     sender_two: nexa::Nexa<'a>,
     sender_three: nexa::Nexa<'a>,
     sender_four: nexa::Nexa<'a>,
+    sender_five: nexa::Nexa<'a>,
+    rollo: rollo::Rollo<'a>,
     repo: repo::Repo,
 }
 
@@ -54,6 +57,10 @@ fn get_device_number_from_id<'b, 'a>(
         "8" => Some((&state.sender_three, nexa::DeviceNumber::Two)),
         "9" => Some((&state.sender_three, nexa::DeviceNumber::Three)),
         "10" => Some((&state.sender_four, nexa::DeviceNumber::One)),
+        "13" => Some((&state.sender_five, nexa::DeviceNumber::One)),
+        "14" => Some((&state.sender_five, nexa::DeviceNumber::Two)),
+        "15" => Some((&state.sender_five, nexa::DeviceNumber::Three)),
+
         _ => None,
     }
 }
@@ -89,6 +96,9 @@ fn set_device_mode(
         "m3" if (mode == "off") => sender_state.sender_two.turn_group_off(),
         "11" => call_external_device("http://192.168.10.124", "4", mode).unwrap(),
         "12" => call_external_device("http://192.168.10.124", "5", mode).unwrap(),
+        "r" if (mode == "up") => sender_state.rollo.send(rollo::Direction::UP),
+        "r" if (mode == "down") => sender_state.rollo.send(rollo::Direction::DOWN),
+        "r" if (mode == "pause") => sender_state.rollo.send(rollo::Direction::PAUSE),
 
         _ => println!("Unknown"),
     }
@@ -201,7 +211,7 @@ fn periodic_state_publish(sender: SenderState) {
             for device in devices.iter() {
                 let device_name = device.id.to_string();
                 if let Some((sender, device_number)) =
-                get_device_number_from_id(&device_name, &sender)
+                    get_device_number_from_id(&device_name, &sender)
                 {
                     match device.current_state {
                         true => sender.turn_device_on(device_number),
@@ -229,6 +239,8 @@ fn main() {
         sender_two: nexa::Nexa::new("11000000000000000000000001", Arc::clone(&pin)), //50331649
         sender_three: nexa::Nexa::new("11000000000000000000000000", Arc::clone(&pin)), // 50331648
         sender_four: nexa::Nexa::new("11000000000000000000000011", Arc::clone(&pin)), // 50331651
+        sender_five: nexa::Nexa::new("11000000000000000000000100", Arc::clone(&pin)), // 50331651
+        rollo: rollo::Rollo::new("FQ1Q011000Q00F000", Arc::clone(&pin)),
         repo,
     };
 
@@ -248,8 +260,8 @@ fn main() {
 
     log4rs::init_config(log_config).unwrap();
 
-    let state2 = nexa_state.clone();
-    thread::spawn(move || periodic_state_publish(state2));
+    // let state2 = nexa_state.clone();
+    // thread::spawn(move || periodic_state_publish(state2));
 
     let config = Config::build(Environment::Production)
         .address("0.0.0.0")
